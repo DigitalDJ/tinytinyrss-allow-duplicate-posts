@@ -1,0 +1,57 @@
+--- classes/rssutils.php	2017-12-25 04:54:51.301497200 +1030
++++ classes/rssutils.php	2017-12-25 03:37:52.000000000 +1030
+@@ -732,8 +732,24 @@
+ 						WHERE id = ?");
+ 					$sth->execute([$base_entry_id]);
+ 
+-					$pdo->commit();
+-					continue;
++					// if we allow duplicate posts, we have to continue to
++					// create the user entries for this feed (if needed)
++					if (get_pref("ALLOW_DUPLICATE_POSTS", $owner_uid, false)) {
++						$sth = $pdo->prepare("SELECT int_id FROM ttrss_user_entries WHERE
++								ref_id = ? AND owner_uid = ?
++								AND (feed_id = ? OR feed_id IS NULL) LIMIT 1");
++						$sth->execute([$base_entry_id, $owner_uid, $feed]);
++
++						if (!$row = $sth->fetch()) {
++							_debug("allow duplicate posts is enabled and user record is not found, continuing.");
++						} else {
++							$pdo->commit();
++							continue;
++						}
++					} else {
++						$pdo->commit();
++						continue;
++					}
+ 				}
+ 
+ 				_debug("hash differs, applying plugin filters:", $debug_enabled);
+@@ -911,8 +927,15 @@
+ 
+ 					// check for user post link to main table
+ 
++					// do we allow duplicate posts with same GUID in different feeds?
++					if (get_pref("ALLOW_DUPLICATE_POSTS", $owner_uid, false)) {
++						$dupcheck_qpart = "AND (feed_id = '$feed' OR feed_id IS NULL)";
++					} else {
++						$dupcheck_qpart = "";
++					}
++
+ 					$sth = $pdo->prepare("SELECT ref_id, int_id FROM ttrss_user_entries WHERE
+-							ref_id = ? AND owner_uid = ?");
++							ref_id = ? AND owner_uid = ? $dupcheck_qpart");
+ 					$sth->execute([$ref_id, $owner_uid]);
+ 
+ 					// okay it doesn't exist - create user entry
+--- classes/pref/prefs.php	2016-02-25 22:10:50.968492600 +1030
++++ classes/pref/prefs.php	2016-02-25 22:12:11.650042500 +1030
+@@ -164,7 +164,7 @@
+ 
+ 		global $access_level_names;
+ 
+-		$prefs_blacklist = array("ALLOW_DUPLICATE_POSTS", "STRIP_UNSAFE_TAGS", "REVERSE_HEADLINES",
++		$prefs_blacklist = array("STRIP_UNSAFE_TAGS", "REVERSE_HEADLINES",
+ 			"SORT_HEADLINES_BY_FEED_DATE", "DEFAULT_ARTICLE_LIMIT",
+ 			"FEEDS_SORT_BY_UNREAD");
+ 
